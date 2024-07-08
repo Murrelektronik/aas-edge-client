@@ -1,0 +1,114 @@
+name: CI to DockerHub with Multi-Arch and Auto-Versioning
+
+on:
+  push:
+    branches:
+      - build
+
+jobs:
+  build-push:
+    # runs-on: ubuntu-latest
+    # strategy:
+    #   matrix:
+    #     # docker_platform: ['linux/amd64', 'linux/arm64/v8'] <- use runner/selfhost with arm chip to build, github action use amd64, take 1 hour to build arm image
+    #     docker_platform: ['linux/amd64']
+    #   fail-fast: false
+    runs-on: ${{ matrix.runner_label }}
+    strategy:
+      matrix:
+        include:
+          - docker_platform: 'linux/amd64'
+            runner_label: 'ubuntu-latest'
+          - docker_platform: 'linux/arm64/v8'
+            runner_label: 'self-hosted' # Label for your self-hosted ARM runner
+      fail-fast: false
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+      
+      # - name: Calculate next version
+      #   id: nextver
+      #   run: |
+      #     git fetch --tags
+      #     LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1` 2>/dev/null || echo "0.0.0")
+      #     echo "Latest tag: $LATEST_TAG"
+      #     if [ "$LATEST_TAG" == "0.0.0" ]; then
+      #       NEXT_VERSION="1.0.0"
+      #     else
+      #       IFS='.' read -ra VER <<< "$LATEST_TAG"
+      #       PATCH=$((VER[2]+1))
+      #       NEXT_VERSION="${VER[0]}.${VER[1]}.$PATCH"
+      #     fi
+      #     echo "Next version: $NEXT_VERSION"
+      #     echo ::set-output name=version::$NEXT_VERSION
+      #     echo "NEXT_VERSION=$NEXT_VERSION" >> $GITHUB_ENV
+      - name: Calculate next version
+        id: nextver
+        run: |
+          # Forcefully fetch tags from the remote, updating local tags to match remote
+          git fetch --tags --force
+
+          # Attempt to identify the latest tag, defaulting to "0.0.0" if none exist
+          LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1` 2>/dev/null || echo "0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # If no tags exist, start versioning from 1.0.0
+          if [ "$LATEST_TAG" == "0.0.0" ]; then
+            NEXT_VERSION="1.0.0"
+          else
+            # Split the latest tag into major, minor, and patch numbers
+            IFS='.' read -ra VER <<< "$LATEST_TAG"
+            PATCH=$((VER[2]+1)) # Increment the patch version
+            NEXT_VERSION="${VER[0]}.${VER[1]}.$PATCH"
+          fi
+
+          echo "Next version: $NEXT_VERSION"
+          
+          # Set the calculated version as an output for other steps to use
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+          # Also export it for use in this job
+          echo "NEXT_VERSION=$NEXT_VERSION" >> $GITHUB_ENV
+        shell: /usr/bin/bash -e {0}
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      # Can add more architecture if needed
+      - name: Determine tag suffix
+        run: |
+          if [ "${{ matrix.docker_platform }}" == "linux/arm64/v8" ]; then
+            echo "TAG_SUFFIX=arm64-${{ env.NEXT_VERSION }}" >> $GITHUB_ENV
+          elif [ "${{ matrix.docker_platform }}" == "linux/amd64" ]; then
+            echo "TAG_SUFFIX=amd64-${{ env.NEXT_VERSION }}" >> $GITHUB_ENV
+          # Add more architectures here
+          else
+            echo "TAG_SUFFIX=unknown-${{ env.NEXT_VERSION }}" >> $GITHUB_ENV
+          fi
+      
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: manhlinh210/rust_aas_edge_client:${{ env.TAG_SUFFIX }}
+          platforms: ${{ matrix.docker_platform }}
+
+      
+      - name: Tag the new version in Git
+        run: |
+          # Check if the tag already exists
+          if git rev-parse $NEXT_VERSION >/dev/null 2>&1; then
+              echo "Tag $NEXT_VERSION already exists. Skipping."
+          else
+              # If the tag does not exist, create and push it
+              git tag $NEXT_VERSION
+              git push origin $NEXT_VERSION
+          fi

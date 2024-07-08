@@ -1,0 +1,444 @@
+openapi: 3.0.3
+info:
+  title: LNI Edge Open API
+  description: |
+    LNI Edge Open Api Specification
+  termsOfService: http://swagger.io/terms/
+  contact:
+    email: manh.linh.phan@yacoub.de
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.0.11
+externalDocs:
+  description: Find out more about Swagger
+  url: http://swagger.io
+
+paths:
+  /:
+    get:
+      tags:
+        - Asset Management
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResRoot'
+              examples:
+                value:
+                  "@context": "https://www.w3.org/2022/wot/td/v1.1"
+                  id: "https://variox1-bln.thingsgate.dev.yacoub.de/"
+                  title: "Vario-CTRL X-Quad 1,5"
+                  version:
+                    instance: "1.0.0"
+                    hardwareRevision: "1.0"
+                    softwareRevision: "1.0.0"
+                    manufacturer: "Murrelektronik GmbH"
+                    model: "Vario-CTRL X-Quad 1,5"
+                    productCode: "V000-CTXQ0-0100001"
+                    serialNumber: "09800202xxxxx"
+                  builddate: "Thu 28. Mar 13:10:49 CET 2024"
+                  securityDefinitions:
+                    bearer_sc:
+                      scheme: "bearer"
+                      in: "header"
+                      format: "jwt"
+                  security:
+                    - "bearer_sc"
+                  base: "https://variox1-bln.thingsgate.dev.yacoub.de/api/"
+                  links:
+                    - href: "identification"
+                      rel: "identification"
+                      method: "GET"
+                    - href: "picture"
+                      rel: "picture"
+                      method: "GET"
+                    - href: "login"
+                      rel: "login"
+                      method: "POST"
+  
+  /submodels/SystemInformation:
+    get:
+      tags:
+        - Submodels
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+              examples:
+                value:
+                  Hardware:
+                    BoardTemperature: "42°C"
+                    Memory:
+                      DiskFree: "15G"
+                      DiskInstalled: "30G"
+                      RAMFree: "4.07 GB"
+                      RAMInstalled: "7.18 GB"
+                  Processor:
+                    CpuClock: "1.50GHz"
+                    CpuCores: "4"
+                    CpuTemperature: "26.8°C"
+                    CpuType: "x86_64"
+                    CpuUsage: "21.23%"
+                  HealthStatus: "NORMAL"
+                  LastUpdate: "2024-04-03T22:20:10Z"
+    patch:
+      tags:
+        - Submodels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemInfo'
+            examples:
+              value:
+                Hardware:
+                  BoardTemperature: "42°C"
+                  Memory:
+                    DiskFree: "15G"
+                    DiskInstalled: "30G"
+                    RAMFree: "4.07 GB"
+                    RAMInstalled: "7.18 GB"
+                Processor:
+                  CpuClock: "1.50GHz"
+                  CpuCores: "4"
+                  CpuTemperature: "26.8°C"
+                  CpuType: "x86_64"
+                  CpuUsage: "21.23%"
+                HealthStatus: "NORMAL"
+                LastUpdate: "2024-04-03T22:20:10Z"
+        required: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "System information updated successfully"
+
+  /submodels/NetworkConfiguration:
+    get:
+      tags:
+        - Submodels
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkConfiguration'
+              examples:
+                value:
+                  NetworkSettings:
+                    LAN1:
+                      AddressMode: "Automatic/DHCP"
+                      IPv4Address: ""
+                      IPv4DNSServers: ""
+                      IPv4StandardGateway: ""
+                      IPv4SubnetMask: ""
+                      LinkSpeedReceiveTransmit: ""
+                      Name: "LAN1"
+                      PrimaryDNSSuffix: ""
+                  LastUpdate: "2024-04-03T22:20:10Z"
+    patch:
+      tags:
+        - Submodels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkConfiguration'
+            examples:
+              value:
+                NetworkSettings:
+                  LAN1:
+                    AddressMode: "Automatic/DHCP"
+                    IPv4Address: ""
+                    IPv4DNSServers: ""
+                    IPv4StandardGateway: ""
+                    IPv4SubnetMask: ""
+                    LinkSpeedReceiveTransmit: ""
+                    Name: "LAN1"
+                    PrimaryDNSSuffix: ""
+                LastUpdate: "2024-04-03T22:20:10Z"
+        required: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "Network configuration updated successfully"
+
+  /submodels/ManagedDevice:
+    get:
+      tags:
+        - Submodels
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedDevice'
+              examples:
+                value:
+                  BoardingStatus: "ONBOARDED"
+                  LastUpdate: "2024-04-03T22:20:10Z"
+    patch:
+      tags:
+        - Submodels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedDevice'
+            examples:
+              value:
+                BoardingStatus: "OFFBOARDING_REQUESTED"
+                LastUpdate: "2024-04-03T22:20:10Z"
+        required: true
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "Managed device updated successfully"
+
+                  
+
+
+components:
+  schemas:
+    ResLink:
+      type: object
+      properties:
+        href:
+          description: Link to available resources eg. /capabilities. Must be absolute path
+          type: string
+        rel:
+          description: Relationship to the linked resource
+          type: string
+        method:
+          description: 'Supported http method ("get", "post", "delete", "put", "patch")'
+          type: string
+
+    ResLinks:
+      type: array
+      items:
+        $ref: '#/components/schemas/ResLink'
+
+    ResRoot:
+      type: object
+      properties:
+        "@context":
+          type: string
+          example: "https://www.w3.org/2022/wot/td/v1.1"
+        id:
+          type: string
+          example: "lni-edge"
+        title:
+          type: string
+          example: "LNI Edge"
+        version:
+          $ref: '#/components/schemas/DeviceVersion'
+        builddate:
+          type: string
+          example: "2021-09-30T12:00:00Z"
+        securityDefinitions:
+          type: object
+          properties:
+            bearer_sc:
+              type: object
+              properties:
+                scheme:
+                  type: string
+                  example: "bearer"
+                in:
+                  type: string
+                  example: "header"
+                format:
+                  type: string
+                  example: "jwt"
+        security:
+          type: array
+          items:
+              type: string
+        base:
+          type: string
+          example: "https://lni-edge.com/api"
+        links:
+          description: List of available resources
+          $ref: '#/components/schemas/ResLinks'
+
+    DeviceVersion:
+      type: object
+      properties:
+        instance:
+          type: string
+          example: "1.0.0"
+        hardwareRevision:
+          type: string
+          example: "1.0"
+        softwareRevision:
+          type: string
+          example: "1.0.0"
+        manufacturer:
+          type: string
+          example: "Murrelektronik GmbH"
+        model:
+          type: string
+          example: "Vario-CTRL X-Quad 1,5"
+        productCode:
+          type: string
+          example: "V000-CTXQ0-0100001"
+        serialNumber:
+          type: string
+          example: "09800202xxxxx"
+
+    MemoryInfo:
+      type: object
+      properties:
+        DiskFree:
+          type: string
+          example: "15G"
+        DiskInstalled:
+          type: string
+          example: "30G"
+        RAMFree:
+          type: string
+          example: "4.07 GB"
+        RAMInstalled:
+          type: string
+          example: "7.18 GB"
+      required:
+        - DiskFree
+        - DiskInstalled
+        - RAMFree
+        - RAMInstalled
+
+    ProcessorInfo:
+      type: object
+      properties:
+        CpuClock:
+          type: string
+          example: "1.50GHz"
+        CpuCores:
+          type: string
+          example: "4"
+        CpuTemperature:
+          type: string
+          example: "26.8°C"
+        CpuType:
+          type: string
+          example: "x86_64"
+        CpuUsage:
+          type: string
+          example: "21.23%"
+      required:
+        - CpuClock
+        - CpuCores
+        - CpuTemperature
+        - CpuType
+        - CpuUsage
+
+    SystemInfo:
+      type: object
+      properties:
+        Hardware:
+          type: object
+          properties:
+            BoardTemperature:
+              type: string
+              example: "42°C"
+            Memory:
+              $ref: '#/components/schemas/MemoryInfo'
+          required:
+            - BoardTemperature
+            - Memory
+        Processor:
+          $ref: '#/components/schemas/ProcessorInfo'
+          required:
+            - Processor
+        HealthStatus:
+          type: string
+          example: "NORMAL"
+        LastUpdate:
+          type: string
+          format: date-time
+          example: "2024-04-03T22:20:10Z"
+      required:
+        - Hardware
+        - Processor
+        - HealthStatus
+        - LastUpdate
+
+    NetworkInterfaceInfo:
+      type: object
+      properties:
+        AddressMode:
+          type: string
+          example: "Automatic/DHCP"
+        IPv4Address:
+          type: string
+          example: "192.168.99.90"
+        IPv4DNSServers:
+          type: string
+          example: "192.168.99.1"
+        IPv4StandardGateway:
+          type: string
+          example: "192.168.99.1"
+        IPv4SubnetMask:
+          type: string
+          example: "255.255.255.0"
+        LinkSpeedReceiveTransmit:
+          type: string
+          example: "1 GB/s"
+        Name:
+          type: string
+          example: "LAN1"
+        PrimaryDNSSuffix:
+          type: string
+          example: ""
+
+    NetworkSettings:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/NetworkInterfaceInfo'
+
+    NetworkConfiguration:
+      type: object
+      properties:
+        NetworkSettings:
+          $ref: '#/components/schemas/NetworkSettings'
+        LastUpdate:
+          type: string
+          format: date-time
+          example: "2024-04-03T22:20:10Z"
+      required:
+        - NetworkSettings
+        - LastUpdate
+
+    ManagedDevice:
+      type: object
+      properties:
+        BoardingStatus:
+          type: string
+          enum:
+            - "OFFBOARDING_REQUESTED"
+            - "ONBOARDED"
+            - "OFFBOARDED"
+          example: "ONBOARDED"
+        LastUpdate:
+          type: string
+          format: date-time
+          example: "2024-04-03T22:20:10Z"
