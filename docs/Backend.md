@@ -82,7 +82,7 @@ In main.rs:
 
 * Collect submodels information
 
-* Collect the every single submodel under endpoint {AAS_SERVER}/shells/{base64_of_aas_uid}/submodels/{base64_of_submodel_uid}
+* Collect the every single submodel under endpoint {AAS_SERVER}/submodels/{base64_of_submodel_uid}
 
 * Store the submodel in the database
 

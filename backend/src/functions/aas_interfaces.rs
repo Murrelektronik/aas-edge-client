@@ -173,9 +173,10 @@ pub async fn patch_submodel_server(
     let client = reqwest::Client::new();
     // Construct the URL for the submodel value endpoint
     let url = format!(
-        "{}shells/{}/submodels/{}/$value",
+        // "{}shells/{}/submodels/{}/$value",
+        "{}submodels/{}/$value",
         aasx_server_url,
-        base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
+        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
@@ -217,9 +218,10 @@ pub async fn fetch_single_submodel_from_server(
 
     let client = reqwest::Client::new();
     let submodel_value_url = format!(
-        "{}/shells/{}/submodels/{}/$value",
+        // "{}/shells/{}/submodels/{}/$value",
+        "{}/submodels/{}/$value",
         aasx_server_url,
-        base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
+        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 

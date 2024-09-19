@@ -25,16 +25,18 @@ async fn fetch_single_submodel(
     _onboarding: bool,
 ) -> std::result::Result<(), actix_web::Error> {
     let submodel_id_short_url = format!(
-        "{}shells/{}/submodels/{}",
+        // "{}shells/{}/submodels/{}",
+        "{}/submodels/{}",
         aasx_server_url,
-        base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
+        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD)
     );
 
     let submodel_value_url = format!(
-        "{}shells/{}/submodels/{}/$value",
+        // "{}shells/{}/submodels/{}/$value",
+        "{}submodels/{}/$value",
         aasx_server_url,
-        base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
+        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD)
     );
 
@@ -195,7 +197,7 @@ pub async fn edge_device_onboarding(
     submodels_collection: std::sync::Arc<tokio::sync::Mutex<mongodb::Collection<mongodb::bson::Document>>>,
 ) -> Result<(), actix_web::Error> {
     let url: String = format!(
-        "{}/shells/{}",
+        "{}shells/{}",
         aasx_server,
         base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD)
     );
@@ -259,7 +261,7 @@ async fn collecting_thumbnail_image(
 ) -> Result<(), Error> {
     // Construct the URL for the thumbnail image
     let url = format!(
-        "{}/shells/{}/asset-information/thumbnail",
+        "{}shells/{}/asset-information/thumbnail",
         aasx_server_url,
         base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD) // Encode the AAS UID in a URL-safe manner
     );
