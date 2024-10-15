@@ -1,6 +1,3 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
-
 use actix_web::web;
 use crate::handlers; // Correctly import the handlers module
 

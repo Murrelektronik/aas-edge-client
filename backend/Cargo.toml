@@ -1,5 +1,5 @@
 [package]
-name = "rust_web_mongo"
+name = "rust_aas_client"
 version = "0.1.0"
 edition = "2021"
 
@@ -24,3 +24,5 @@ clokwerk = "0.4.0"
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
 serde_yaml = "0.9.34"
+rocksdb = "0.22.0"
+basyx-rs = "0.2.1"

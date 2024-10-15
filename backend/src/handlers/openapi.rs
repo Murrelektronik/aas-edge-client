@@ -1,6 +1,3 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
-
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_yaml::Value as YamlValue;

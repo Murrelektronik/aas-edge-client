@@ -1,76 +1,64 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
 use anyhow::Context;
-use mongodb::{
-    bson::{ doc, Bson, Document},
-    Collection,
-    options::UpdateOptions,
-};
+use rocksdb::DB;
+use serde_json::Value;
 use tokio::sync::Mutex;
 use std::sync::Arc;
-use serde_json::Value;
 use reqwest;
 
 // use serde::{Serialize, Deserialize};
 
-// Adjusted to return a Result<Value, String> to better handle success and error states.
+// Find one document in RocksDB based on the _id
 pub async fn aas_find_one(
     _id: String, // composite ID for the submodel using AAS ID and submodel ID
-    submodels_collection_arc: Arc<Mutex<Collection<Document>>>
-) 
-    -> Result<Document, String> {
-    let submodels_collection_lock = submodels_collection_arc.lock().await;
-    // println!("Finding document with id: {}", _id);
-    let filter = doc! { "_id": &_id };
+    rocksdb: Arc<Mutex<DB>>, // RocksDB database instance
+) -> Result<Value, String> {
+    let db = rocksdb.lock().await;
 
-    match submodels_collection_lock.find_one(filter, None).await {
-        Ok(Some(document)) => {
-            // Optionally remove the _id field from the document if not needed
-            let mut document = document.clone(); // Clone if you need to modify the document.
-            document.remove("_id");
-            Ok(document)
-        },
-        Ok(None) => Err("Document not found".into()),
+    // Fetch the value from RocksDB based on the key (_id)
+    match db.get(_id.clone()) {
+        Ok(Some(data)) => {
+            // Deserialize the stored data into a `serde_json::Value` object
+            let value: Value = serde_json::from_slice(&data)
+                .map_err(|e| format!("Error deserializing document: {}", e))?;
+            Ok(value)
+        }
+        Ok(None) => Err(format!("Document with id '{}' not found", _id)),
         Err(e) => Err(format!("Error finding document: {}", e)),
     }
 }
 
+// Update or upsert one document in RocksDB
 pub async fn aas_update_one(
     _id: String, // composite ID for the submodel using AAS ID and submodel ID
-    submodels_collection: Arc<Mutex<Collection<Document>>>, 
-    new_document: Document, upsert: bool) // Document to be upserted
-    -> Result<String, String> 
-{
-    
-    let filter = doc! { "_id": _id };
-    let options = UpdateOptions::builder().upsert(upsert).build();
+    rocksdb: Arc<Mutex<DB>>, // RocksDB database instance
+    new_document: Value, // Document to be upserted
+    _upsert: bool, // Ignored since RocksDB overwrites by default
+) -> Result<String, String> {
+    let db = rocksdb.lock().await;
 
-    let submodels_collection_lock = submodels_collection.lock().await;
-    // GUIDE: Use the '$set' operator for the update, which requires modifying the document structure
-    let update = doc! { "$set": new_document };
+    // Serialize the JSON document into bytes
+    let serialized_doc = serde_json::to_vec(&new_document)
+        .map_err(|e| format!("Error serializing document: {}", e))?;
 
-    // Perform the update operation
-    match submodels_collection_lock.update_one(filter, update, options).await {
-        Ok(update_result) => {
-            if let Some(upserted_id) = update_result.upserted_id {
-                Ok(format!("Document upserted with id: {:?}", upserted_id))
-            } else {
-                Ok("Document updated successfully".into())
-            }
-        },
-        Err(e) => Err(format!("Error upserting document: {}", e)),
-    }
+    // Insert or update the document in RocksDB
+    db.put(_id.clone(), serialized_doc)
+        .map_err(|e| format!("Error upserting document: {}", e))?;
+
+    Ok(format!("Document updated successfully with id: {}", _id))
 }
 
 pub async fn get_submodel_database(
-    submodels_collection_arc: std::sync::Arc<tokio::sync::Mutex<mongodb::Collection<mongodb::bson::Document>>>,
-    aas_id_short: &str,
-    submodel_id_short: &str
-) -> Result<mongodb::bson::Document, String> {
-    
+    rocksdb: Arc<Mutex<DB>>, // Arc and Mutex for thread-safe shared access to the RocksDB instance
+    aas_id_short: &str,    // Short ID for the AAS (Asset Administration Shell)
+    submodel_id_short: &str,  // Short ID for the submodel
+) -> Result<Value, String> {
+    // Create a composite ID for the submodel using AAS ID and submodel ID
     let _id_submodel = format!("{}:{}", aas_id_short, submodel_id_short);
 
-    let aas_submodel_result = aas_find_one(_id_submodel, submodels_collection_arc.clone()).await;
+    // Retrieve the submodel from RocksDB
+    let aas_submodel_result = aas_find_one(_id_submodel, rocksdb.clone()).await;
+    
+    // Handle success or error in fetching the submodel
     let aas_submodel = match aas_submodel_result {
         Ok(aas_submodel) => aas_submodel,
         Err(e) => return Err(format!("Error getting submodel: {}", e)),
@@ -78,105 +66,91 @@ pub async fn get_submodel_database(
 
     Ok(aas_submodel)
 }
-
+// Patch and merge submodel in RocksDB
 pub async fn patch_submodel_database(
-    submodels_collection_arc: Arc<Mutex<Collection<Document>>>, // Arc and Mutex for thread-safe shared access to the MongoDB collection
+    rocksdb: Arc<Mutex<DB>>, // Arc and Mutex for thread-safe shared access to RocksDB
     aas_id_short: &str,    // Short ID for the AAS (Asset Administration Shell)
     submodel_id_short: &str,  // Short ID for the submodel
     json: &Value  // JSON data to be patched into the submodel
 ) -> Result<String, String> {
-    
-    // Clone the Arc to get a second reference to the collection
-    let second_submodels_collection_arc = submodels_collection_arc.clone();
     // Create a composite ID for the submodel using AAS ID and submodel ID
     let _id_submodel = format!("{}:{}", aas_id_short, submodel_id_short);
 
     // Retrieve the existing submodel document from the database
-    let aas_submodel_result = aas_find_one(_id_submodel.clone(), submodels_collection_arc.clone()).await;
-    let aas_submodel = match aas_submodel_result {
-        Ok(aas_submodel) => aas_submodel,
-        Err(e) => return Err(format!("Error getting submodel: {}", e)),  // Return an error if submodel retrieval fails
+    let existing_submodel_result = aas_find_one(_id_submodel.clone(), rocksdb.clone()).await;
+    let existing_submodel = match existing_submodel_result {
+        Ok(submodel) => submodel,
+        Err(_) => json.clone(),  // If no existing submodel, start with the new JSON
     };
 
-    // Parse the JSON request body into a BSON document
-    let mut patch_document: Document = match mongodb::bson::to_document(&json) {
-        Ok(document) => document,
-        Err(e) => return Err(format!("Error parsing request body: {}", e)),  // Return an error if parsing fails
-    };
+    // Merge the existing submodel with the new patch document
+    let merged_doc = merge_documents(&existing_submodel, json);
 
-    // Merge the existing submodel document with the patch document
-    let merged_doc = merge_documents(&aas_submodel, &mut patch_document);
+    // Update the submodel in RocksDB
+    let update_result = aas_update_one(_id_submodel, rocksdb.clone(), merged_doc, true).await;
 
-    // Update the submodel document in the database with the merged document
-    let update_result = aas_update_one(_id_submodel, second_submodels_collection_arc.clone(), merged_doc, false).await;
-    match update_result {
-        Ok(message) => Ok(message),  // Return a success message if the update is successful
-        Err(e) => Err(format!("Error patching submodel: {}", e)),  // Return an error if the update fails
-    }
+    update_result
 }
 
-fn merge_documents(old_doc: &Document, new_doc: &Document) -> Document {
-    let mut merged_doc = old_doc.clone(); // Clone old_doc to preserve its structure
 
-    // Iterate over old_doc to preserve its keys and structure
-    for (key, old_value) in old_doc.iter() {
-        // Check if new_doc has a value for the current key
-        if let Some(new_value) = new_doc.get(key) {
-            // Deep merge if both values are documents
-            if let (Bson::Document(old_subdoc), Bson::Document(new_subdoc)) = (old_value, new_value) {
-                let merged_subdoc = merge_documents(old_subdoc, new_subdoc);
-                merged_doc.insert(key.clone(), Bson::Document(merged_subdoc));
-            } else {
-                // Update with new value if not a sub-document
-                merged_doc.insert(key.clone(), new_value.clone());
+// Merge two documents recursively
+fn merge_documents(old_doc: &Value, new_doc: &Value) -> Value {
+    let mut merged_doc = old_doc.clone(); // Start with the old document
+
+    // Iterate over the keys in the new document and update or insert into the old document
+    if let Value::Object(ref old_map) = old_doc {
+        if let Value::Object(ref new_map) = new_doc {
+            for (key, new_value) in new_map {
+                // If both old and new values are objects, recursively merge them
+                if let Some(old_value) = old_map.get(key) {
+                    if let (Value::Object(_), Value::Object(_)) = (old_value, new_value) {
+                        let merged_subdoc = merge_documents(old_value, new_value);
+                        merged_doc[key] = merged_subdoc;
+                    } else {
+                        merged_doc[key] = new_value.clone(); // Overwrite if not both objects
+                    }
+                } else {
+                    merged_doc[key] = new_value.clone(); // Add new key-value pairs
+                }
             }
         }
-        // If new_doc does not have the current key, old_value remains unchanged
     }
-
     merged_doc
 }
 
 
 pub async fn patch_submodel_server(
-    submodels_collection_arc: Arc<Mutex<Collection<Document>>>, // Arc and Mutex for thread-safe shared access to the MongoDB collection
+    rocksdb: Arc<Mutex<DB>>, // RocksDB instance for thread-safe shared access
     aas_id_short: &str,    // Short ID for the AAS (Asset Administration Shell)
     submodel_id_short: &str,  // Short ID for the submodel
     aasx_server_url: &str,    // Base URL of the AASX server
-    aas_uid: &str,    // UID of the AAS
     json: &Value  // JSON data to be patched into the submodel
 ) -> Result<String, String> {
     // Create a composite ID for the submodel using AAS ID and submodel ID
     let _id_submodel = format!("{}:{}", aas_id_short, submodel_id_short);
 
-    // Retrieve the existing submodel document from the database
-    let submodels_collection = submodels_collection_arc.clone();
-    let aas_submodel = aas_find_one(_id_submodel, submodels_collection_arc.clone()).await
+    // Retrieve the existing submodel document from the RocksDB database
+    let existing_submodel = aas_find_one(_id_submodel.clone(), rocksdb.clone()).await
         .map_err(|e| format!("Error getting submodel: {}", e))?;
 
-    // Parse the JSON request body into a BSON document
-    let mut patch_document: Document = mongodb::bson::to_document(&json)
-        .map_err(|e| format!("Error parsing request body: {}", e))?;
-
     // Merge the existing submodel document with the patch document
-    let merged_doc = merge_documents(&aas_submodel, &mut patch_document);
-    
-    // Retrieve the submodels dictionary from the database
-    let submodels_dictionary = aas_find_one(format!("{}:submodels_dictionary", aas_id_short), submodels_collection.clone()).await
+    let merged_doc = merge_documents(&existing_submodel, json);
+
+    // Retrieve the submodels dictionary from RocksDB
+    let submodels_dictionary = aas_find_one(format!("{}:submodels_dictionary", aas_id_short), rocksdb.clone()).await
         .map_err(|e| format!("Error getting submodels dictionary: {}", e))?;
 
     // Extract the submodel UID from the dictionary
-    let submodel_uid = submodels_dictionary.get_str(submodel_id_short)
-        .map_err(|_| "Submodel not found in dictionary".to_string())?;
+    let submodel_uid = submodels_dictionary.get(submodel_id_short)
+        .and_then(|val| val.as_str())
+        .ok_or_else(|| "Submodel not found in dictionary".to_string())?;
 
     // Create a new HTTP client
     let client = reqwest::Client::new();
     // Construct the URL for the submodel value endpoint
     let url = format!(
-        // "{}shells/{}/submodels/{}/$value",
         "{}submodels/{}/$value",
         aasx_server_url,
-        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
@@ -195,33 +169,30 @@ pub async fn patch_submodel_server(
 }
 
 
+// Fetch a single submodel from the AASX server
 pub async fn fetch_single_submodel_from_server(
     aasx_server_url: &str,
     aas_id_short: &str,
-    aas_uid: &str,
     submodel_id_short: &str,
-    submodels_collection_arc: Arc<Mutex<Collection<Document>>>
+    rocksdb: Arc<Mutex<DB>>,
 ) -> Result<(), String> {
-    // let submodels_collection_lock = submodels_collection_arc.lock().await;
-    let submodels_dictionary = aas_find_one(format!("{}:submodels_dictionary", aas_id_short), 
-                                                        submodels_collection_arc.clone()).await;
+    
+    let submodels_dictionary = aas_find_one(format!("{}:submodels_dictionary", aas_id_short), rocksdb.clone()).await;
     
     let submodel_uid = match submodels_dictionary {
         Ok(submodels_dictionary) => {
             match submodels_dictionary.get(submodel_id_short) {
-                Some(Bson::String(submodel_uid_str)) => submodel_uid_str.to_owned(), // Convert Bson::String to Rust String
-                _ => return Err("Submodel not found in dictionary".into()), // Handle both None and non-string cases
+                Some(Value::String(submodel_uid_str)) => submodel_uid_str.to_owned(), // Convert to String
+                _ => return Err("Submodel not found in dictionary".into()), // Handle error
             }
         },
         Err(e) => return Err(format!("Error getting submodels dictionary: {}", e)),
     };
 
     let client = reqwest::Client::new();
-    let submodel_value_url = format!(
-        // "{}/shells/{}/submodels/{}/$value",
-        "{}/submodels/{}/$value",
+    let submodel_value_url: String = format!(
+        "{}submodels/{}/$value",
         aasx_server_url,
-        // base64::encode_config(aas_uid, base64::URL_SAFE_NO_PAD),
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
@@ -235,40 +206,36 @@ pub async fn fetch_single_submodel_from_server(
         let body_value: Value = response.json().await
             .with_context(|| "Failed to parse JSON response")
             .map_err(|e| format!("Error parsing JSON response: {}", e))?;
-        let bson_value = mongodb::bson::to_bson(&body_value)
+
+        let bson_value = serde_json::to_value(&body_value)
             .with_context(|| "Failed to convert JSON to BSON")
             .map_err(|e| format!("Error converting JSON to BSON: {}", e))?;
 
-        if let mongodb::bson::Bson::Document(document) = bson_value {
-            let submodels_collection_lock = submodels_collection_arc.lock().await;
-            submodels_collection_lock.replace_one(
-                mongodb::bson::doc! { "_id": format!("{}:{}", aas_id_short, submodel_id_short) },
-                document,
-                mongodb::options::ReplaceOptions::builder().upsert(false).build(),
-            ).await
-            .with_context(|| "Failed to replace submodel in the database")
-            .map_err(|e| format!("Error replacing submodel in the database: {}", e))?;
+        if let Value::Object(document) = bson_value {
+            let db = rocksdb.lock().await;
+            db.put(
+                format!("{}:{}", aas_id_short, submodel_id_short),
+                serde_json::to_vec(&document).expect("Failed to serialize JSON")
+            ).expect("Failed to replace submodel in RocksDB");
 
             println!("Successfully replaced submodel: {}", submodel_id_short)
         } else {
             return Err("Response body is not a BSON document".into())
         }
 
-
     } else {
         return Err(format!("Error fetching submodel: {:?}", response))
     }
     Ok(())
-    
 }
 
 pub async fn read_managed_device(
-    submodels_collection_arc: Arc<Mutex<Collection<Document>>>,
-    aas_id_short: &str
-) -> Result<Document, String> {
+    rocksdb: Arc<Mutex<DB>>,
+    aas_id_short: &str,
+) -> Result<Value, String> {
     let table_id = format!("{}:{}", aas_id_short, "ManagedDevice");
     
-    let managed_device = aas_find_one(table_id, submodels_collection_arc.clone()).await;
+    let managed_device = aas_find_one(table_id, rocksdb.clone()).await;
     match managed_device {
         Ok(managed_device) => Ok(managed_device),
         Err(e) => Err(format!("Failed to find managed device: {}", e)),

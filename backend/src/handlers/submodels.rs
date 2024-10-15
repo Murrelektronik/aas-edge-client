@@ -1,41 +1,53 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
-
 use actix_web::{web::{self, Data, Path}, HttpResponse, Responder};
-use mongodb::{bson::Document, Collection};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde_json::{json, Value};
 use chrono::Utc;
 use futures::future::try_join_all;
-use std::collections::HashMap;
-
+use rocksdb::DB;
 
 use crate::functions::aas_interfaces;
 use crate::state::AppState;
 
+/// Handler to get all submodels.
 pub async fn get_submodels(
-    submodels_collection_arc: Data<Arc<Mutex<Collection<Document>>>>,
-    app_data : Data<AppState>
+    rocksdb: Data<Arc<Mutex<DB>>>,
+    app_data: Data<AppState>,
 ) -> impl Responder {
-    // using get_ref() to get the reference to the inner data
-    let submodels_collection = submodels_collection_arc.get_ref().clone();
-    
+    // Clone the RocksDB instance
+    let rocksdb = rocksdb.get_ref().clone();
+
+    // Construct the key for the submodels dictionary
     let submodels_dictionary_id = format!("{}:submodels_dictionary", &app_data.aas_id_short);
-    let submodels_dictionary = match aas_interfaces::aas_find_one(submodels_dictionary_id, 
-                                        submodels_collection.clone()).await{
+
+    // Fetch the submodels dictionary from RocksDB
+    let submodels_dictionary = match aas_interfaces::aas_find_one(
+        submodels_dictionary_id,
+        rocksdb.clone(),
+    )
+    .await
+    {
         Ok(submodels_dictionary) => submodels_dictionary,
-        Err(e) => return actix_web::HttpResponse::InternalServerError().body(format!("Error getting submodels dictionary: {}", e)),
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error getting submodels dictionary: {}", e))
+        }
     };
 
-    let keys: Vec<String> = submodels_dictionary.keys().cloned().collect();
+    // Extract the keys (submodel IDs) from the dictionary
+    let keys: Vec<String> = submodels_dictionary
+        .as_object()
+        .map(|map| map.keys().cloned().collect())
+        .unwrap_or_default();
 
+    // Create asynchronous tasks to fetch each submodel
     let fetch_tasks = keys.into_iter().map(|key| {
-        let collection_clone = submodels_collection.clone();
+        let rocksdb_clone = rocksdb.clone();
         let aas_id_short_clone = app_data.aas_id_short.clone();
         async move {
             aas_interfaces::get_submodel_database(
-                collection_clone,
+                rocksdb_clone,
                 &aas_id_short_clone,
                 &key,
             )
@@ -44,82 +56,104 @@ pub async fn get_submodels(
         }
     });
 
+    // Execute all fetch tasks concurrently
     match try_join_all(fetch_tasks).await {
         Ok(results) => {
-            let submodels_map: HashMap<String, Document> = results.into_iter().collect();
-            HttpResponse::Ok().json(submodels_map) // send the map as a JSON response
+            let submodels_map: HashMap<String, Value> = results.into_iter().collect();
+            HttpResponse::Ok().json(submodels_map) // Send the map as a JSON response
         }
         Err(e) => HttpResponse::InternalServerError().body(format!("Error getting submodels: {}", e)),
     }
 }
 
+/// Handler to get a single submodel.
 pub async fn get_submodel(
-    submodels_collection_arc: Data<Arc<Mutex<Collection<Document>>>>,
+    rocksdb: Data<Arc<Mutex<DB>>>,
     path: Path<String>,
-    app_data : Data<AppState>
+    app_data: Data<AppState>,
 ) -> impl Responder {
     let submodel_id = path.into_inner();
-    
-    // using get_ref() to get the reference to the inner data
-    let submodels_collection = submodels_collection_arc.get_ref().clone();
-    let aas_submodel = match aas_interfaces::get_submodel_database(submodels_collection, 
-                                        &app_data.aas_id_short, 
-                                        &submodel_id).await{
+
+    // Clone the RocksDB instance
+    let rocksdb_clone = rocksdb.get_ref().clone();
+
+    // Fetch the submodel from RocksDB
+    let aas_submodel = match aas_interfaces::get_submodel_database(
+        rocksdb_clone,
+        &app_data.aas_id_short,
+        &submodel_id,
+    )
+    .await
+    {
         Ok(aas_submodel) => aas_submodel,
-        Err(e) => return actix_web::HttpResponse::InternalServerError().body(format!("Error getting submodel: {}", e)),
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error getting submodel: {}", e))
+        }
     };
     HttpResponse::Ok().json(aas_submodel)
 }
 
+/// Handler to patch (update) a submodel.
 pub async fn patch_submodel(
-    submodels_collection_arc: Data<Arc<Mutex<Collection<Document>>>>,
+    rocksdb: Data<Arc<Mutex<DB>>>,
     path: Path<String>,
-    app_data : Data<AppState>,
-    json: web::Json<Value>
+    app_data: Data<AppState>,
+    json: web::Json<Value>,
 ) -> impl Responder {
     let submodel_id_short = path.into_inner();
-    // Handle LastUpdate only for SystemInformation and NetworkConfiguration
-    // To modify the `json` value, work with its inner `Value` directly
+    // Convert the JSON payload into a mutable `Value`
     let mut json = json.into_inner();
 
-    // Check if key "LastUpdate" exists in the JSON object. If it does, update it with the current time
+    // Update the "LastUpdate" field if it exists
     if let Some(last_update) = json.get_mut("LastUpdate") {
         *last_update = json!(Utc::now().to_rfc3339());
     }
-    
-    // using get_ref() to get the reference to the inner data
-    let submodels_collection = submodels_collection_arc.get_ref().clone();
 
+    // Clone the RocksDB instance
+    let rocksdb_clone = rocksdb.get_ref().clone();
+
+    // Patch the submodel in the local RocksDB database
     match aas_interfaces::patch_submodel_database(
-        submodels_collection, 
-        &app_data.aas_id_short, 
-        &submodel_id_short, 
-        &json).await{
-            Ok(_) => (),
-            Err(e) => return actix_web::HttpResponse::InternalServerError().body(format!("Error patching submodel in database: {}", e)),
+        rocksdb_clone.clone(),
+        &app_data.aas_id_short,
+        &submodel_id_short,
+        &json,
+    )
+    .await
+    {
+        Ok(_) => (),
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error patching submodel in database: {}", e))
+        }
     };
 
-    let submodels_collection_2nd = submodels_collection_arc.get_ref().clone();
-
+    // Read the managed device information
     match aas_interfaces::read_managed_device(
-        submodels_collection_2nd.clone(), 
-        &app_data.aas_id_short
-    ).await{
-        Ok(managed_device) => managed_device,
-        Err(e) => return actix_web::HttpResponse::InternalServerError().body(format!("Error patching submodel to server: {}", e)),
+        rocksdb_clone.clone(),
+        &app_data.aas_id_short,
+    )
+    .await
+    {
+        Ok(_) => (),
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error reading managed device: {}", e))
+        }
     };
-    
+
+    // Patch the submodel on the AAS server
     match aas_interfaces::patch_submodel_server(
-        submodels_collection_2nd.clone(), 
-        &app_data.aas_id_short, 
-        &submodel_id_short, 
-        &app_data.aasx_server, 
-        &app_data.aas_identifier, 
-        &json
-    ).await{
+        rocksdb_clone,
+        &app_data.aas_id_short,
+        &submodel_id_short,
+        &app_data.aasx_server,
+        &json,
+    )
+    .await
+    {
         Ok(_) => HttpResponse::Ok().body("Submodel patched successfully"),
         Err(e) => HttpResponse::InternalServerError().body(format!("Error patching submodel to server: {}", e)),
-    };
-
-    HttpResponse::Ok().body("Submodel patched successfully")
+    }
 }

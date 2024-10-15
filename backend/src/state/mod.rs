@@ -1,12 +1,11 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
-
-use std::sync::Mutex;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use rocksdb::DB;
 
 pub struct AppState {
     pub health_check_response: Mutex<String>,
-    // Adding new fields to the AppState
-    pub mongo_uri: String,
+    // Replacing the MongoDB URI with RocksDB
+    pub rocksdb: Arc<Mutex<DB>>, // RocksDB instance wrapped in Arc<Mutex<>> for shared state across threads
     pub aas_identifier: String,
     pub aas_id_short: String,
     pub aasx_server: String,

@@ -1,5 +1,3 @@
-// Authors: Manh-Linh Phan (manh.linh.phan@yacoub.de)
-
 use tokio::process::Command;
 use anyhow:: anyhow;
 
