@@ -8,11 +8,11 @@ use tokio::{self, sync::Mutex};
 use rocksdb::DB;
 
 use crate::functions::{aas_interfaces, bash_command};
+use crate::functions::transform_value_submodel::submodel_to_submodel_value;
 use crate::state::AppState;
 
 /// Parses a date-time string into a `DateTime<Utc>` object.
 fn parse_date_time_from_string(date_time_str: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
-    println!("Parsing date time from string: {}", date_time_str);
     let date_time = DateTime::parse_from_rfc3339(date_time_str)?;
     Ok(date_time.with_timezone(&Utc))
 }
@@ -136,7 +136,7 @@ async fn server_pushing(app_data: web::Data<AppState>, rocksdb: Arc<Mutex<DB>>) 
         return;
     }
 
-    let managed_device = match aas_interfaces::read_managed_device(rocksdb.clone(), &app_data.aas_id_short).await {
+    let managed_device_submodel = match aas_interfaces::read_managed_device(rocksdb.clone(), &app_data.aas_id_short).await {
         Ok(managed_device) => managed_device,
         Err(e) => {
             eprintln!("Failed to read managed device: {}", e);
@@ -144,11 +144,12 @@ async fn server_pushing(app_data: web::Data<AppState>, rocksdb: Arc<Mutex<DB>>) 
         }
     };
 
-    let boarding_status = managed_device
+    let managed_device_submodel_value = submodel_to_submodel_value(managed_device_submodel);
+    let boarding_status = managed_device_submodel_value
         .get("BoardingStatus")
         .and_then(|status| status.as_str())
         .unwrap_or("UNKNOWN");
-    let last_update_str = managed_device
+    let last_update_str = managed_device_submodel_value
         .get("LastUpdate")
         .and_then(|update| update.as_str())
         .unwrap_or("UNKNOWN");

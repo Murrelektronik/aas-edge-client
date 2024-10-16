@@ -22,61 +22,41 @@ async fn fetch_single_submodel(
     submodels_dictionary: Arc<Mutex<serde_json::Map<String, Value>>>,
     _onboarding: bool,
 ) -> Result<(), actix_web::Error> {
-    let submodel_id_short_url = format!(
+    let submodel_url = format!(
         "{}submodels/{}",
-        aasx_server_url,
-        base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD)
-    );
-
-    let submodel_value_url = format!(
-        "{}submodels/{}/$value",
         aasx_server_url,
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD)
     );
 
     let client = reqwest::Client::new();
 
-    let response_value = client
-        .get(&submodel_value_url)
+    let response_submodel = client
+        .get(&submodel_url)
         .send()
         .await
-        .with_context(|| format!("Failed to send request to fetch submodel value from URL: {}", submodel_value_url))
+        .with_context(|| format!("Failed to send request to fetch submodel id short from URL: {}", submodel_url))
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    let response_id_short = client
-        .get(&submodel_id_short_url)
-        .send()
-        .await
-        .with_context(|| format!("Failed to send request to fetch submodel id short from URL: {}", submodel_id_short_url))
-        .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    if response_id_short.status().is_success() && response_value.status().is_success() {
-        let body_id_short: Value = response_id_short
+    if response_submodel.status().is_success(){
+        let response_body_submodel: Value = response_submodel
             .json()
             .await
             .with_context(|| "Failed to parse response body as JSON")
             .map_err(actix_web::error::ErrorInternalServerError)?;
 
-        let body_value: Value = response_value
-            .json()
-            .await
-            .with_context(|| "Failed to parse response body as JSON")
-            .map_err(actix_web::error::ErrorInternalServerError)?;
-
-        let submodel_id_short = body_id_short["idShort"]
+        let submodel_id_short = response_body_submodel["idShort"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Failed to extract idShort from response body"))
             .map_err(actix_web::error::ErrorInternalServerError)?;
 
         // Serialize the submodel value to store in RocksDB
-        let serialized_value = serde_json::to_vec(&body_value)
-            .with_context(|| "Failed to serialize submodel value")
+        let serialized_submodel = serde_json::to_vec(&response_body_submodel)
             .map_err(actix_web::error::ErrorInternalServerError)?;
 
         // Store the submodel in RocksDB
         {
             let mut db = rocksdb.lock().await;
-            db.put(format!("{}:{}", aas_id_short, submodel_id_short), serialized_value)
+            db.put(format!("{}:{}", aas_id_short, submodel_id_short), serialized_submodel)
                 .map_err(actix_web::error::ErrorInternalServerError)?;
         }
 
@@ -92,29 +72,29 @@ async fn fetch_single_submodel(
         }
     } else {
         // Handle unsuccessful responses
-        if !response_id_short.status().is_success() {
-            let status_code = response_id_short.status();
-            let response_body = response_id_short.text().await.unwrap_or_default();
+        if !response_submodel.status().is_success() {
+            let status_code = response_submodel.status();
+            let response_body = response_submodel.text().await.unwrap_or_default();
 
             println!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
-                submodel_id_short_url, status_code, response_body
+                submodel_url, status_code, response_body
             );
             return Err(actix_web::error::ErrorInternalServerError(format!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
-                submodel_id_short_url, status_code, response_body
+                submodel_url, status_code, response_body
             )));
         } else {
-            let status_code = response_value.status();
-            let response_body = response_value.text().await.unwrap_or_default();
+            let status_code = response_submodel.status();
+            let response_body = response_submodel.text().await.unwrap_or_default();
 
             println!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
-                submodel_value_url, status_code, response_body
+                submodel_url, status_code, response_body
             );
             return Err(actix_web::error::ErrorInternalServerError(format!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
-                submodel_value_url, status_code, response_body
+                submodel_url, status_code, response_body
             )));
         }
     }

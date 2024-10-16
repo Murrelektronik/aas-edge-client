@@ -19,51 +19,51 @@ services:
       - ./backend/static/:/app/static/
     networks:               # make it use same network to connect ports
       - edge_network
-    depends_on:
-      - mongodb
+    # depends_on:
+    #   - mongodb
     #restart: always
 
-  device-web-ui:
-    container_name: device-web-ui
-    build: 
-      context: ./frontend
-      dockerfile: Dockerfile
-    depends_on:
-      - mongodb
-      - aas-client-service
-    ports:
-      - "3000:3000"
-    volumes:
-      - type: bind
-        source: ./frontend/public/mount_volume/
-        target: /app/build/mount_volume/
-    networks:
-      - edge_network
-    #restart: always
+  # device-web-ui:
+  #   container_name: device-web-ui
+  #   build: 
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   depends_on:
+  #     - mongodb
+  #     - aas-client-service
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - type: bind
+  #       source: ./frontend/public/mount_volume/
+  #       target: /app/build/mount_volume/
+  #   networks:
+  #     - edge_network
+  #   #restart: always
 
-  mongodb:
-    image: mongo:4.4.18
-    container_name: rust_web_mongo-4.4
-    ports:
-      - "27015:27017"
-    volumes:
-      - ./db:/data/db
-    # restart: always
-    networks:               # make it use same network to connect ports
-      - edge_network
-    #restart: always
+  # mongodb:
+  #   image: mongo:4.4.18
+  #   container_name: rust_web_mongo-4.4
+  #   ports:
+  #     - "27015:27017"
+  #   volumes:
+  #     - ./db:/data/db
+  #   # restart: always
+  #   networks:               # make it use same network to connect ports
+  #     - edge_network
+  #   #restart: always
 
-  # nginx container service serving the frontend and the backend
-  nginx:
-    container_name: lni-aas-edge-client-nginx
-    image: nginx:1.19.0 # use the official Nginx image
-    ports:
-      - "8081:8081"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-    depends_on:
-      - aas-client-service
-      - device-web-ui
-    networks:
-      - edge_network
-    #restart: always
+  # # nginx container service serving the frontend and the backend
+  # nginx:
+  #   container_name: lni-aas-edge-client-nginx
+  #   image: nginx:1.19.0 # use the official Nginx image
+  #   ports:
+  #     - "8081:8081"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  #   depends_on:
+  #     - aas-client-service
+  #     - device-web-ui
+  #   networks:
+  #     - edge_network
+  #   #restart: always

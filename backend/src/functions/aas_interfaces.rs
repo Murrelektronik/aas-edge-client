@@ -7,6 +7,8 @@ use reqwest;
 
 // use serde::{Serialize, Deserialize};
 
+use crate::functions::transform_value_submodel::merge_submodel_value_to_submodel;
+
 // Find one document in RocksDB based on the _id
 pub async fn aas_find_one(
     _id: String, // composite ID for the submodel using AAS ID and submodel ID
@@ -71,7 +73,7 @@ pub async fn patch_submodel_database(
     rocksdb: Arc<Mutex<DB>>, // Arc and Mutex for thread-safe shared access to RocksDB
     aas_id_short: &str,    // Short ID for the AAS (Asset Administration Shell)
     submodel_id_short: &str,  // Short ID for the submodel
-    json: &Value  // JSON data to be patched into the submodel
+    submodel_value: &Value  // JSON data to be patched into the submodel
 ) -> Result<String, String> {
     // Create a composite ID for the submodel using AAS ID and submodel ID
     let _id_submodel = format!("{}:{}", aas_id_short, submodel_id_short);
@@ -80,11 +82,11 @@ pub async fn patch_submodel_database(
     let existing_submodel_result = aas_find_one(_id_submodel.clone(), rocksdb.clone()).await;
     let existing_submodel = match existing_submodel_result {
         Ok(submodel) => submodel,
-        Err(_) => json.clone(),  // If no existing submodel, start with the new JSON
+        Err(_) => submodel_value.clone(),  // If no existing submodel, start with the new JSON
     };
 
     // Merge the existing submodel with the new patch document
-    let merged_doc = merge_documents(&existing_submodel, json);
+    let merged_doc = merge_submodel_value_to_submodel(existing_submodel, submodel_value.clone());
 
     // Update the submodel in RocksDB
     let update_result = aas_update_one(_id_submodel, rocksdb.clone(), merged_doc, true).await;
@@ -124,7 +126,7 @@ pub async fn patch_submodel_server(
     aas_id_short: &str,    // Short ID for the AAS (Asset Administration Shell)
     submodel_id_short: &str,  // Short ID for the submodel
     aasx_server_url: &str,    // Base URL of the AASX server
-    json: &Value  // JSON data to be patched into the submodel
+    submodel_value: &Value  // JSON data to be patched into the submodel
 ) -> Result<String, String> {
     // Create a composite ID for the submodel using AAS ID and submodel ID
     let _id_submodel = format!("{}:{}", aas_id_short, submodel_id_short);
@@ -134,7 +136,7 @@ pub async fn patch_submodel_server(
         .map_err(|e| format!("Error getting submodel: {}", e))?;
 
     // Merge the existing submodel document with the patch document
-    let merged_doc = merge_documents(&existing_submodel, json);
+    let merged_doc = merge_submodel_value_to_submodel(existing_submodel, submodel_value.clone());
 
     // Retrieve the submodels dictionary from RocksDB
     let submodels_dictionary = aas_find_one(format!("{}:submodels_dictionary", aas_id_short), rocksdb.clone()).await
@@ -149,21 +151,21 @@ pub async fn patch_submodel_server(
     let client = reqwest::Client::new();
     // Construct the URL for the submodel value endpoint
     let url = format!(
-        "{}submodels/{}/$value",
+        "{}submodels/{}",
         aasx_server_url,
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
     // Send a PATCH request to the submodel value endpoint
-    let response = client.patch(&url)
+    let response = client.put(&url)
         .json(&merged_doc)
         .send()
         .await
-        .map_err(|e| format!("Error sending patch request: {}", e))?;
+        .map_err(|e| format!("Error sending put request: {}", e))?;
 
     // Check the response status code and return appropriate message
     match response.status() {
-        reqwest::StatusCode::NO_CONTENT => Ok("Submodel patched successfully".into()),  // Return success message if status is 204 No Content
+        reqwest::StatusCode::NO_CONTENT => Ok("Submodel putted successfully".into()),  // Return success message if status is 204 No Content
         _ => Err(response.text().await.unwrap_or_else(|_| "Unknown error".into())),  // Return error message if status is not 204
     }
 }
@@ -190,16 +192,16 @@ pub async fn fetch_single_submodel_from_server(
     };
 
     let client = reqwest::Client::new();
-    let submodel_value_url: String = format!(
-        "{}submodels/{}/$value",
+    let submodel_url: String = format!(
+        "{}submodels/{}",
         aasx_server_url,
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
-    let response = client.get(&submodel_value_url)
+    let response = client.get(&submodel_url)
         .send()
         .await
-        .with_context(|| format!("Failed to send request to fetch submodel value from URL: {}", submodel_value_url))
+        .with_context(|| format!("Failed to send request to fetch submodel value from URL: {}", submodel_url))
         .map_err(|e| format!("Error sending GET request: {}", e))?;
 
     if response.status().is_success() {
