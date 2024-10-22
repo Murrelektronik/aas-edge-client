@@ -28,17 +28,22 @@ async fn fetch_single_submodel(
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD)
     );
 
-    let client = reqwest::Client::new();
+    // let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)  // This allows SSL certificates to be ignored (only for testing purposes!)
+        .timeout(std::time::Duration::from_secs(10))  // You can add a timeout for the request
+        .build()
+        .expect("Failed to build client");
 
-    let response_submodel = client
+    let response = client
         .get(&submodel_url)
         .send()
         .await
         .with_context(|| format!("Failed to send request to fetch submodel id short from URL: {}", submodel_url))
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    if response_submodel.status().is_success(){
-        let response_body_submodel: Value = response_submodel
+    if response.status().is_success(){
+        let response_body_submodel: Value = response
             .json()
             .await
             .with_context(|| "Failed to parse response body as JSON")
@@ -72,9 +77,9 @@ async fn fetch_single_submodel(
         }
     } else {
         // Handle unsuccessful responses
-        if !response_submodel.status().is_success() {
-            let status_code = response_submodel.status();
-            let response_body = response_submodel.text().await.unwrap_or_default();
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let response_body = response.text().await.unwrap_or_default();
 
             println!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
@@ -85,8 +90,8 @@ async fn fetch_single_submodel(
                 submodel_url, status_code, response_body
             )));
         } else {
-            let status_code = response_submodel.status();
-            let response_body = response_submodel.text().await.unwrap_or_default();
+            let status_code = response.status();
+            let response_body = response.text().await.unwrap_or_default();
 
             println!(
                 "Failed to fetch URL {}. Status code: {}. Response body: {}",
@@ -171,7 +176,12 @@ pub async fn edge_device_onboarding(
     println!("Fetching URL: {}", url);
 
     // Request Shell information from the Server
-    let client: reqwest::Client = reqwest::Client::new();
+    // let client: reqwest::Client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)  // This allows SSL certificates to be ignored (only for testing purposes!)
+        .timeout(std::time::Duration::from_secs(10))  // You can add a timeout for the request
+        .build()
+        .expect("Failed to build client");
     let response: reqwest::Response = client
         .get(&url)
         .send()
@@ -236,7 +246,12 @@ async fn collecting_thumbnail_image(
     );
 
     // Create a new HTTP client
-    let client: reqwest::Client = reqwest::Client::new();
+    // let client: reqwest::Client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)  // This allows SSL certificates to be ignored (only for testing purposes!)
+        .timeout(std::time::Duration::from_secs(10))  // You can add a timeout for the request
+        .build()
+        .expect("Failed to build client");
 
     // Send a GET request to the constructed URL
     let mut response = client

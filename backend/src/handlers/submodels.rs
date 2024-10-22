@@ -9,6 +9,7 @@ use rocksdb::DB;
 
 use crate::functions::aas_interfaces;
 use crate::state::AppState;
+use crate::functions::transform_value_submodel::{submodel_to_submodel_value, merge_submodel_value_to_submodel};
 
 /// Handler to get all submodels.
 pub async fn get_submodels(
@@ -72,7 +73,7 @@ pub async fn get_submodel(
     path: Path<String>,
     app_data: Data<AppState>,
 ) -> impl Responder {
-    let submodel_id = path.into_inner();
+    let submodel_id_short = path.into_inner();
 
     // Clone the RocksDB instance
     let rocksdb_clone = rocksdb.get_ref().clone();
@@ -81,7 +82,7 @@ pub async fn get_submodel(
     let aas_submodel = match aas_interfaces::get_submodel_database(
         rocksdb_clone,
         &app_data.aas_id_short,
-        &submodel_id,
+        &submodel_id_short,
     )
     .await
     {
@@ -91,7 +92,8 @@ pub async fn get_submodel(
                 .body(format!("Error getting submodel: {}", e))
         }
     };
-    HttpResponse::Ok().json(aas_submodel)
+    let aas_submodel_value = submodel_to_submodel_value(aas_submodel);
+    HttpResponse::Ok().json(aas_submodel_value)
 }
 
 /// Handler to patch (update) a submodel.
@@ -111,41 +113,53 @@ pub async fn patch_submodel(
     }
 
     // Clone the RocksDB instance
-    let rocksdb_clone = rocksdb.get_ref().clone();
+    let rocksdb = rocksdb.get_ref().clone();
+
+    // Fetch the submodel from RocksDB
+    let aas_submodel = match aas_interfaces::get_submodel_database(
+        rocksdb.clone(),
+        &app_data.aas_id_short,
+        &submodel_id_short,
+    )
+    .await
+    {
+        Ok(aas_submodel) => aas_submodel,
+        Err(e) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Error getting submodel: {}", e))
+        }
+    };
+
+    // convert json payload into submodel format
+    let json = merge_submodel_value_to_submodel(json, aas_submodel);
 
     // Patch the submodel in the local RocksDB database
-    match aas_interfaces::patch_submodel_database(
-        rocksdb_clone.clone(),
+    if let Err(e) = aas_interfaces::patch_submodel_database(
+        rocksdb.clone(),
         &app_data.aas_id_short,
         &submodel_id_short,
         &json,
     )
     .await
     {
-        Ok(_) => (),
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Error patching submodel in database: {}", e))
-        }
+        return HttpResponse::InternalServerError()
+            .body(format!("Error patching submodel in database: {}", e));
     };
 
     // Read the managed device information
-    match aas_interfaces::read_managed_device(
-        rocksdb_clone.clone(),
+    if let Err(e) = aas_interfaces::read_managed_device(
+        rocksdb.clone(),
         &app_data.aas_id_short,
     )
     .await
     {
-        Ok(_) => (),
-        Err(e) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Error reading managed device: {}", e))
-        }
+        return HttpResponse::InternalServerError()
+            .body(format!("Error reading managed device: {}", e));
     };
 
     // Patch the submodel on the AAS server
     match aas_interfaces::patch_submodel_server(
-        rocksdb_clone,
+        rocksdb,
         &app_data.aas_id_short,
         &submodel_id_short,
         &app_data.aasx_server,

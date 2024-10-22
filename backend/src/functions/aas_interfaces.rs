@@ -4,6 +4,8 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use reqwest;
+use reqwest::Error as ReqwestError;
+
 
 // use serde::{Serialize, Deserialize};
 
@@ -148,7 +150,11 @@ pub async fn patch_submodel_server(
         .ok_or_else(|| "Submodel not found in dictionary".to_string())?;
 
     // Create a new HTTP client
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)  // This allows SSL certificates to be ignored (only for testing purposes!)
+        .timeout(std::time::Duration::from_secs(10))  // You can add a timeout for the request
+        .build()
+        .expect("Failed to build client");
     // Construct the URL for the submodel value endpoint
     let url = format!(
         "{}submodels/{}",
@@ -157,11 +163,38 @@ pub async fn patch_submodel_server(
     );
 
     // Send a PATCH request to the submodel value endpoint
+    // let response = client.put(&url)
+    //     .json(&merged_doc)
+    //     .send()
+    //     .await
+    //     .map_err(|e| format!("Error sending put request: {}", e))?;
+
     let response = client.put(&url)
         .json(&merged_doc)
         .send()
         .await
-        .map_err(|e| format!("Error sending put request: {}", e))?;
+        .map_err(|e| {
+            let pretty_body = serde_json::to_string_pretty(&merged_doc).unwrap_or_else(|_| "Failed to serialize JSON".to_string());
+
+            if e.is_timeout() {
+                format!("Request to {} timed out", url)
+            } else if e.is_status() {
+                format!(
+                    "Received error response {:?} from {}. \nRequest body: {}",
+                    e.status(), url, pretty_body
+                )
+            } else if e.is_request() {
+                format!(
+                    "Failed to send request to {}: {}. \nRequest body: {}",
+                    url, e, pretty_body
+                )
+            } else {
+                format!(
+                    "An unexpected error occurred while sending PUT request to {}: {}. \nRequest body: {}",
+                    url, e, pretty_body
+                )
+            }
+        })?;
 
     // Check the response status code and return appropriate message
     match response.status() {
@@ -191,18 +224,33 @@ pub async fn fetch_single_submodel_from_server(
         Err(e) => return Err(format!("Error getting submodels dictionary: {}", e)),
     };
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)  // This allows SSL certificates to be ignored (only for testing purposes!)
+        .timeout(std::time::Duration::from_secs(10))  // You can add a timeout for the request
+        .build()
+        .expect("Failed to build client");
     let submodel_url: String = format!(
         "{}submodels/{}",
         aasx_server_url,
         base64::encode_config(submodel_uid, base64::URL_SAFE_NO_PAD),
     );
 
-    let response = client.get(&submodel_url)
+    let response = client
+        .get(&submodel_url)
         .send()
         .await
-        .with_context(|| format!("Failed to send request to fetch submodel value from URL: {}", submodel_url))
-        .map_err(|e| format!("Error sending GET request: {}", e))?;
+        .map_err(|e| 
+            if e.is_timeout() {
+                format!("Request to {} timed out", submodel_url)
+            } else if e.is_status() {
+                format!("Received error response {:?} from {}", e.status(), submodel_url)
+            } else if e.is_request() {
+                format!("Failed to send request to {}: {}", submodel_url, e)
+            } else {
+                format!("An unexpected error occurred while sending GET request to {}: {}", submodel_url, e)
+            }
+        )?;
+       
 
     if response.status().is_success() {
         let body_value: Value = response.json().await

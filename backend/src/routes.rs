@@ -11,7 +11,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
                 .route(web::get().to(handlers::submodels::get_submodels))
         )
         .service(
-            web::resource("/submodels/{submodel_id}")
+            web::resource("/submodels/{submodel_id_short}")
                 .route(web::get().to(handlers::submodels::get_submodel))
                 .route(web::patch().to(handlers::submodels::patch_submodel))
         )
