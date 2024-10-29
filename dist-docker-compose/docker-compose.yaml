@@ -16,15 +16,12 @@ services:
       - ./mount_volumes/backend/static/:/app/static/
     networks:               # make it use same network to connect ports
       - edge_network
-    depends_on:
-      - mongodb
     restart: always
 
   react-app:
     container_name: react-app
     image: khaiyacoub/lni-aas-react-app:amd64-3.3.0
     depends_on:
-      - mongodb
       - actix_web_app
     ports:
       - "3000:3000"

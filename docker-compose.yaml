@@ -20,6 +20,7 @@ services:
       - ./backend/static/:/app/static/
     networks:               # make it use same network to connect ports
       - edge_network
+    restart: always
 
   device-web-ui:
     container_name: device-web-ui
@@ -38,7 +39,7 @@ services:
         target: /app/build/mount_volume/
     networks:
       - edge_network
-    #restart: always
+    restart: always
 
   # nginx container service serving the frontend and the backend
   nginx:
@@ -53,4 +54,4 @@ services:
       - device-web-ui
     networks:
       - edge_network
-    #restart: always
+    restart: always
